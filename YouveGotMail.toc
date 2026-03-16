@@ -1,7 +1,7 @@
 ## Interface: 120000
 ## Title: You've Got Mail
 ## Author: Arenima@AlleriaEU
-## Version: 1.0 Release
+## Version: 1.4 Release
 ## SavedVariables: YGMDB
 
 Modules.xml

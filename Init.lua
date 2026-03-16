@@ -1,7 +1,10 @@
 local PlaySound = PlaySound
+local GetAddOnMetadata = C_AddOns.GetAddOnMetadata
+local AddonName = 'YouveGotMail'
 --------------------------------------------------
 
 local AlertFrame = CreateFrame("Frame", UIParent)
+local AddonVersion = GetAddOnMetadata(AddonName, 'Version')
 
 local AddonDB
 local Defaults = {
@@ -126,6 +129,10 @@ local function ProvideOptions(self)
 	local title = self:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
 	title:SetPoint("TOPLEFT", 16, -16)
 	title:SetText("You've Got Mail")
+
+	local version = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+	version:SetPoint("TOPRIGHT", -16, -16)
+	version:SetText(string.format("Version %s", AddonVersion))
 	
 	local info = {}
 	local dropdown = CreateFrame("Frame", "YGMSoundDropdown", self, "UIDropDownMenuTemplate")
