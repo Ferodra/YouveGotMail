@@ -1,6 +1,7 @@
 ## Interface: 120000
 ## Title: You've Got Mail
 ## Author: Arenima@AlleriaEU
+## Notes: Tiny lightweight addon to play a sound when receiving mail!
 ## Version: 1.4 Release
 ## SavedVariables: YGMDB
 

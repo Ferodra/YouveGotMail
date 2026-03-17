@@ -1,22 +1,83 @@
+--[[========================================================================================
+	
+	
+	Author: Ferodra [Arenima - Alleria EU]
+		Email: ferodra@gmx.de
+
+	Permission is hereby granted, free of charge, to any person obtaining a copy
+	of this software and associated documentation files (the 'Software'), to deal
+	in the Software without restriction, including without limitation the rights
+	to use, copy, modify, merge, publish, distribute, sublicense copies of the 
+	Software, and to permit persons to whom the Software is
+	furnished to do so, subject to the following conditions:
+
+	The above copyright notice and this permission notice shall be included in
+	all copies or substantial portions of the Software.
+
+	THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+	IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+	FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+	AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+	LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+	OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+	THE SOFTWARE.
+    ========================================================================================]]
+
+--[[
+	This Addon provides a big, dynamic library of methods to instantly create unitframes for every need.
+
+	'local *' and 'E.*' explaination:
+		'local' defines the private scope in LUA
+		'E' is our 'class' name in this case and lets us access everything defined within.
+	
+	Since we want to access some variables across our AddOn, we have to throw them into this private(/public) scope (local(/E)).
+	
+	Important Lua-Garbage note:
+		Setting the value of any table via {} creates a NEW table and will contribute to generating garbage!
+		To properly do this, empty a table with 'wipe(t)' and set values with: 'table.val = newvalue'
+]]--
+
+	
+--[[===========================
+		Init and Caching
+=============================]]
 local PlaySound = PlaySound
 local GetAddOnMetadata = C_AddOns.GetAddOnMetadata
-local AddonName = 'YouveGotMail'
---------------------------------------------------
 
-local AlertFrame = CreateFrame("Frame", UIParent)
-local AddonVersion = GetAddOnMetadata(AddonName, 'Version')
 
-local AddonDB
-local Defaults = {
-	["SoundToUse"] = "Notification 2",
-	["AlwaysPlaySound"] = true,
+local AddOnName, E							= ... -- AddOn-Name, Engine
+local AceAddon = _G.LibStub('AceAddon-3.0')
+---@class E
+local AddOn = AceAddon:NewAddon(AddOnName, 'AceHook-3.0')
+AddOn.AddOnName = AddOnName
+AddOn.AddonVersion = GetAddOnMetadata(AddOnName, 'Version')
+
+E[1] = AddOn
+E[2] = {}
+
+-- Expansions
+AddOn.IsTBC = WOW_PROJECT_ID == WOW_PROJECT_BURNING_CRUSADE_CLASSIC -- not used
+AddOn.IsCata = WOW_PROJECT_ID == WOW_PROJECT_CATACLYSM_CLASSIC
+AddOn.IsWrath = WOW_PROJECT_ID == WOW_PROJECT_WRATH_CLASSIC
+AddOn.IsRetail = WOW_PROJECT_ID == WOW_PROJECT_MAINLINE
+AddOn.IsClassic = WOW_PROJECT_ID == WOW_PROJECT_CLASSIC
+
+-- Add optional AddOns in the TOC section 'OptionalDeps'
+AddOn.Libs = {
+	['AceAddon'] 	= AceAddon,
+	['Callbacks'] 	= LibStub('CallbackHandler-1.0'):New(E),
+	['LSM']			= LibStub("LibSharedMedia-3.0")
 }
 
-local LibStub = LibStub
-local LSM = LibStub("LibSharedMedia-3.0")
-local LSM_Sounds = LSM:HashTable('sound')
+-- Callback table
+AddOn.Callbacks = {}
 
+-- Global to access the API everywhere
+_G['YGM'] = E
+--------------------------------------------------
 
+local AlertFrame = CreateFrame("Frame", nil, UIParent)
+local LSM_Sounds = AddOn.Libs.LSM:HashTable('sound')
 local LastPlayed = 0
 local SoundPath = "Interface/AddOns/YouveGotMail/sounds/"
 local SOUNDS = {
@@ -44,41 +105,21 @@ local SOUNDS = {
 
 do
 	for k,v in pairs(SOUNDS) do
-		LSM:Register('sound', k, v)
+		AddOn.Libs.LSM:Register('sound', k, v)
 	end
 end
 
-local function PlaySetSound()
-	PlaySoundFile(LSM:Fetch('sound', AddonDB.SoundToUse) or SOUNDS[Defaults.SoundToUse], 'Master')
+function AddOn:PlaySetSound()
+	PlaySoundFile(self.Libs.LSM:Fetch('sound', self.db.global.SoundToUse) or SOUNDS[self.ConfigDefaults.global.SoundToUse], self.db.global.SoundChannel or 'Master')
 end
 
 local function OnEvent(self, event, arg1)
-	if event == "ADDON_LOADED" and arg1 == "YouveGotMail" then
-		self:UnregisterEvent(event)
-		
-		if YGMDB == nil then
-			YGMDB = {}
-		end
-		
-		AddonDB = YGMDB
-		for k,v in pairs(Defaults) do
-			if AddonDB[k] == nil then
-				AddonDB[k] = v
-			end
-		end
-		
-		self.IsInitialized = true
-		return
-	end
-	
-	if not self.IsInitialized then return end
-	
 	if HasNewMail() and not self.LastState and LastPlayed + 2 < GetTime() then
-		if not AddonDB.AlwaysPlaySound and AlertFrame:IsEventRegistered("PLAYER_ENTERING_WORLD") then
+		if not AddOn.db.global.AlwaysPlaySound and AlertFrame:IsEventRegistered("PLAYER_ENTERING_WORLD") then
 			AlertFrame:UnregisterEvent("PLAYER_ENTERING_WORLD")
 		end
 		
-		PlaySetSound()
+		AddOn:PlaySetSound()
 		self.LastState = true
 		LastPlayed = GetTime()
 	elseif not HasNewMail() then
@@ -86,128 +127,16 @@ local function OnEvent(self, event, arg1)
 	end
 end
 
-local function UpdateConfig()
-	if not AddonDB.AlwaysPlaySound then
-		AlertFrame:UnregisterEvent("PLAYER_ENTERING_WORLD")
-	else
-		if not AlertFrame:IsEventRegistered("PLAYER_ENTERING_WORLD") then
-			AlertFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-		end
-	end
+function AddOn:GetTOCString(name)
+    return GetAddOnMetadata(self.AddOnName, name)
 end
 
-local function SortByName(a, b)
-	if not a or not b then return true end
-	if a > b then
-		return false
-	else
-		return true
-	end
+function AddOn:OnInitialize()
+	self:InitConfig()
 end
 
-local function GetMediaTable()
-	local LSMData = LSM:HashTable('sound')
-	local Data = {}
-	
-	for k,v in pairs(LSMData) do
-		Data[#Data+1] = k
-	end
-	
-	table.sort(Data, SortByName)
-	
-	return Data
-end
-
-local function ShowTooltip(owner, anchor, text)
-	GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
-	GameTooltip:AddLine(text, 1, 1, 1)
-	GameTooltip:Show()
-end
-
-local function ProvideOptions(self)
-	
-	local title = self:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-	title:SetPoint("TOPLEFT", 16, -16)
-	title:SetText("You've Got Mail")
-
-	local version = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-	version:SetPoint("TOPRIGHT", -16, -16)
-	version:SetText(string.format("Version %s", AddonVersion))
-	
-	local info = {}
-	local dropdown = CreateFrame("Frame", "YGMSoundDropdown", self, "UIDropDownMenuTemplate")
-	dropdown:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -60)
-	dropdown:SetWidth(300)
-	dropdown.initialize = function()
-		for k,v in ipairs(GetMediaTable()) do
-			info.text = v
-			info.value = v
-			
-			info.func = function(self)
-				AddonDB.SoundToUse = self.value
-				dropdown.Text:SetText(self.value)
-			end
-			info.checked = info.value == AddonDB.SoundToUse
-			UIDropDownMenu_AddButton(info)
-		end
-	end
-	
-	dropdown.Text:SetText(AddonDB.SoundToUse or DefaultSound)
-	
-	local checkButton = CreateFrame("CheckButton", "YGMSoundCondition", self, "ChatConfigCheckButtonTemplate")
-	checkButton:SetPoint("TOPLEFT", dropdown, "TOPLEFT", 13, -35)
-	checkButton:SetSize(32, 32)
-	checkButton:HookScript("OnClick", function(btn)
-		local Checked = btn:GetChecked()
-		AddonDB.AlwaysPlaySound = Checked
-		UpdateConfig()
-	end);
-	checkButton:HookScript("OnEnter", function(btn)
-		ShowTooltip(btn, "ANCHOR_RIGHT", "When enabled, the sound always is played after loading screens, when there still is pending mail.")
-	end)
-	checkButton:HookScript("OnLeave", function(btn)
-		GameTooltip:Hide()
-	end)
-	checkButton:SetChecked(AddonDB.AlwaysPlaySound)
-	
-	checkButton.title = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-	checkButton.title:ClearAllPoints()
-	checkButton.title:SetPoint("LEFT", checkButton, "LEFT", 40, 0)
-	checkButton.title:SetText("Always Play Sound")
-	
-	local test = CreateFrame("Button", "YGMTest", self, "UIPanelButtonTemplate")
-	test:SetText("Test")
-	test:SetWidth(177)
-	test:SetHeight(24)
-	test:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 250, -60)
-	test:SetScript("OnClick", function()
-		PlaySetSound()
-	end)
-	
-	self:SetScript("OnShow", nil)
-end
-
-local function AddOptions()
-	local panel = CreateFrame("Frame")
-	panel.name = "You've Got Mail"
-	
-	
-	if InterfaceOptions_AddCategory then
-		InterfaceOptions_AddCategory(panel)
-	else
-		local category, layout = Settings.RegisterCanvasLayoutCategory(panel, panel.name);
-		Settings.RegisterAddOnCategory(category);
-	end
-	
-	panel:SetScript("OnShow", ProvideOptions)
-end
-
-do
-	AlertFrame.IsInitialized = false
+function AddOn:OnEnable()
 	AlertFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 	AlertFrame:RegisterEvent("UPDATE_PENDING_MAIL")
-	AlertFrame:RegisterEvent("ADDON_LOADED")
 	AlertFrame:SetScript("OnEvent", OnEvent)
-	
-	AddOptions()
 end
